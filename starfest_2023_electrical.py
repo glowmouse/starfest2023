@@ -5,17 +5,30 @@ Draws 2 maps of the 2023 Starfest electrical grid
 import cv2      # type: ignore
 import copy
 import numpy as np
-from typing import Optional
-from typing import Callable
-from typing import Any
+from typing import Optional, Callable, Any, Iterable, Tuple, TypeAlias, List
+import typing
 
 # For type checking with mypy
-Pixel         = tuple[int, int ]
-Color         = tuple[int, int, int ]
-CoordToPixel  = Callable[ [Any], tuple[int,int] ]  # typing.any = NumPi array :(
+Pixel         = tuple[int, int]
+Color         = tuple[int, int, int]
+
+# Closest I can get on the numpy stuff :(
+# email andrew.brownbill@gmail.com if you know how to do this?
+Vector:         TypeAlias = 'np.ndarray[Any, Any ]'
+Matrix:         TypeAlias = 'np.ndarray[Any, Any ]'
+CoordToPixel  = Callable[ [Vector], tuple[int,int] ]
 
 class MapFeature:
-  def __init__( self, name: str, feature_type: str, long: float, lat: float, map_name: str, destination: Optional[str], usage: Optional[int], pixel: Optional[Pixel] ):
+  def __init__( self, 
+      name:           str,
+      feature_type:   str, 
+      long:           float, 
+      lat:            float, 
+      map_name:       str, 
+      destination:    Optional[str], 
+      usage:          Optional[int], 
+      pixel:          Optional[Pixel] 
+      ):
     """
     Features on the electrical grid maps
 
@@ -38,9 +51,10 @@ class MapFeature:
       (x, y) = pixel
       self.pixel    = np.array( [x, y], np.float64 )
 
-MapFeatures = list[ MapFeature ]
-FeatureFilter = Callable[ [MapFeature], bool ]
-FeatureDrawer= Callable[ [MapFeature, Pixel, Optional[Pixel]], None]
+# Type checking that depends on MapFeature
+MapFeatures =     List[ MapFeature ]    # Explicitely list and not iterable
+FeatureFilter =   Callable[ [MapFeature], bool ]
+FeatureDrawer=    Callable[ [MapFeature, Pixel, Optional[Pixel]], None]
 
 MAP_FEATURES = [
   #
@@ -128,7 +142,11 @@ MAP_FEATURES = [
 
 ]
 
-def compute_coord_to_pixel_function(entry1 : MapFeature, entry2 : MapFeature, basis: MapFeature ):
+def compute_coord_to_pixel_function(
+    entry1:   MapFeature, 
+    entry2:   MapFeature, 
+    basis:    MapFeature 
+  ) -> CoordToPixel:
   """
   Computes a function that maps coordinates (degrees) to pixel
   locations on a map given three MapFeature records.
@@ -142,8 +160,8 @@ def compute_coord_to_pixel_function(entry1 : MapFeature, entry2 : MapFeature, ba
   """
   1. Compute degree and pixel vectors from basis to entry
   """
-  deg_vec_0 = entry1.coord - basis.coord
-  deg_vec_1 = entry2.coord - basis.coord
+  deg_vec_0: Vector = entry1.coord - basis.coord
+  deg_vec_1: Vector = entry2.coord - basis.coord
   pixel_vec_0 = entry1.pixel - basis.pixel
   pixel_vec_1 = entry2.pixel - basis.pixel
 
@@ -167,7 +185,10 @@ def compute_coord_to_pixel_function(entry1 : MapFeature, entry2 : MapFeature, ba
   """
   3. Helper function to map degrees to pixels given M and the basis
   """
-  def coord_to_pixel_helper( coord, M, basis ):
+  def coord_to_pixel_helper( 
+      coord : Vector,
+      M     : Matrix,
+      basis : MapFeature ) -> Pixel:
     pixel = M.dot(coord - basis.coord) + basis.pixel
     return ( int( pixel[0] ), int( pixel[1] ) )
 
@@ -177,7 +198,10 @@ def compute_coord_to_pixel_function(entry1 : MapFeature, entry2 : MapFeature, ba
   return lambda coord : coord_to_pixel_helper( coord, M, basis )
 
 
-def find_map_entry( features: MapFeatures, name: str ):
+def find_map_entry( 
+    features:   MapFeatures, 
+    name:       str 
+  ) -> MapFeature:
   """
   Finds a named feature in a list of features.
   
@@ -189,8 +213,11 @@ def find_map_entry( features: MapFeatures, name: str ):
   print("Cannot find " + name )
   assert( False )
 
-
-def get_destination_pixel( map_features : MapFeatures, destination_name : Optional[str], coord_to_pixel: CoordToPixel ):
+def get_destination_pixel( 
+    map_features:       MapFeatures, 
+    destination_name:   Optional[str], 
+    coord_to_pixel:     CoordToPixel 
+  ) -> Optional[Pixel]:
   """
   Given a destination name, compute the pixel location of the destination
   """
@@ -214,21 +241,29 @@ def draw_features( map_features : MapFeatures, coord_to_pixel : CoordToPixel, fe
       destination_pixel = get_destination_pixel( map_features, feature.destination, coord_to_pixel )
       feature_drawer( feature, pixel, destination_pixel )
 
-def filter_for_type( filter_type : str ):
+def filter_for_type( 
+    filter_type : str 
+  ) -> FeatureFilter:
   """
   Create a function that returns true if a feature is a particular type
   """
   return lambda feature: feature.type == filter_type
 
 
-def filter_for_line( filter_type : str ):
+def filter_for_line( 
+    filter_type : str 
+  ) -> FeatureFilter:
   """
   Create a function that returns true if a feature is a type and has a destination
   """
-  return lambda feature: feature.type == filter_type and feature.destination
+  return lambda feature: feature.type == filter_type and feature.destination is not None
 
 
-def create_line_drawer( image, color: Color, line_width: int ):
+def create_line_drawer( 
+    image, 
+    color:        Color, 
+    line_width:   int 
+  ) -> FeatureDrawer:
   """
   Create a function that draws a line for features with a destination
   """
@@ -236,7 +271,10 @@ def create_line_drawer( image, color: Color, line_width: int ):
       image, pixel, dest_pixel, color, line_width )
 
 
-def create_label_drawer( image, color: Color ):
+def create_label_drawer( 
+    image, 
+    color: Color 
+  ) -> FeatureDrawer:
   """
   Create a function that uses the feature name to draw a label
   """
@@ -246,7 +284,11 @@ def create_label_drawer( image, color: Color ):
         cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA, False ) 
 
 
-def draw_crosshair( image, point: Pixel, color: Color ):
+def draw_crosshair( 
+    image, 
+    point:    Pixel, 
+    color:    Color
+  ) -> None:
   """
   Draws a small crosshair at point
   """
@@ -262,14 +304,21 @@ def draw_crosshair( image, point: Pixel, color: Color ):
   cv2.line( image, lower_right, upper_left, color, line_width ) 
 
 
-def create_crosshair_drawer( image, color: Color ):
+def create_crosshair_drawer( 
+    image, 
+    color: Color 
+  ) -> FeatureDrawer:
   """
   Create a function that draws a crosshair
   """
   return lambda feature, pixel, dest_pixel: draw_crosshair( image, pixel, color ) 
 
 
-def draw_spools( image, features : MapFeatures, coord_to_pixel: CoordToPixel ):
+def draw_spools( 
+    image, 
+    features:         MapFeatures, 
+    coord_to_pixel:   CoordToPixel 
+  ) -> None:
   """
   Draw all the spools.
   """
@@ -279,7 +328,11 @@ def draw_spools( image, features : MapFeatures, coord_to_pixel: CoordToPixel ):
   draw_features( features, coord_to_pixel, filter_for_type("Spool"), create_label_drawer( image, off_white ))
 
 
-def draw_mats( image, features: MapFeatures, coord_to_pixel: CoordToPixel ):
+def draw_mats( 
+    image, 
+    features:         MapFeatures, 
+    coord_to_pixel:   CoordToPixel 
+  ) -> None:
   """
   Draw all the road mats.
   """
@@ -288,7 +341,15 @@ def draw_mats( image, features: MapFeatures, coord_to_pixel: CoordToPixel ):
   draw_features( features, coord_to_pixel, filter_for_type("Mat"), create_crosshair_drawer( image, blue ))
   draw_features( features, coord_to_pixel, filter_for_type("Mat"), create_label_drawer( image, off_white ))
 
-def draw_lines( image, features: MapFeatures, coord_to_pixel: CoordToPixel, feature_types: list[str], color: Color, alpha: float, width: int = 4 ):
+def draw_lines( 
+    image, 
+    features:         MapFeatures, 
+    coord_to_pixel:   CoordToPixel, 
+    feature_types:    Iterable[str], 
+    color:            Color, 
+    alpha:            float, 
+    width:            int = 4
+  ) -> None:
   """
   Draw lines for a set of feature types.  Allows blending.
   
@@ -306,7 +367,11 @@ def draw_lines( image, features: MapFeatures, coord_to_pixel: CoordToPixel, feat
     draw_features( features, coord_to_pixel, filter_for_line(feature_type), create_line_drawer( overlay, color, width ))
   image = cv2.addWeighted( overlay, alpha, image, beta, 0, image )
 
-def draw_roads( image, features: MapFeatures, coord_to_pixel: CoordToPixel ):
+def draw_roads( 
+    image, 
+    features:       MapFeatures, 
+    coord_to_pixel: CoordToPixel 
+  ) -> None:
   """
   Draw all the roads
   """
@@ -315,7 +380,11 @@ def draw_roads( image, features: MapFeatures, coord_to_pixel: CoordToPixel ):
   road_width = 20
   draw_lines( image, features, coord_to_pixel, ["Road"], cyan, alpha, road_width )
 
-def draw_tent( image, features: MapFeatures, coord_to_pixel: CoordToPixel ):
+def draw_tent( 
+    image, 
+    features:       MapFeatures, 
+    coord_to_pixel: CoordToPixel 
+  ) -> None:
   """
   Draw the tent
   """
@@ -324,7 +393,11 @@ def draw_tent( image, features: MapFeatures, coord_to_pixel: CoordToPixel ):
   draw_lines( image, features, coord_to_pixel, ["Tent"], white, alpha )
 
 
-def draw_electric_cords( image, features: MapFeatures, coord_to_pixel: CoordToPixel ):
+def draw_electric_cords( 
+    image, 
+    features:       MapFeatures, 
+    coord_to_pixel: CoordToPixel 
+  ) -> None:
   """
   Draw the electric grid
   
@@ -337,7 +410,11 @@ def draw_electric_cords( image, features: MapFeatures, coord_to_pixel: CoordToPi
   draw_lines( image, features, coord_to_pixel, ["Spool", "Source", "Mat" ], blue, alpha )
 
 
-def draw_all_features( image, map_features: MapFeatures, coord_to_pixel: CoordToPixel ):
+def draw_all_features( 
+    image, 
+    map_features:   MapFeatures, 
+    coord_to_pixel: CoordToPixel 
+  ) -> None:
   """
   Draw everything on a map.
   
@@ -351,7 +428,7 @@ def draw_all_features( image, map_features: MapFeatures, coord_to_pixel: CoordTo
   draw_spools        ( image, map_features, coord_to_pixel )
 
 
-def draw_map( map_name: str ):
+def draw_map( map_name: str ) -> None:
   """
   Draws one of the electric grid maps
   
@@ -391,7 +468,7 @@ def draw_map( map_name: str ):
   cv2.imwrite(map_name + "_spool.png", image )
 
 
-def main():
+def main() -> None:
   """
   Draws both the Starfest electric grid maps
   """
