@@ -5,18 +5,20 @@ Draws 2 maps of the 2023 Starfest electrical grid
 import cv2      # type: ignore
 import copy
 import numpy as np
+import numpy.typing as npt
 from typing import Optional, Callable, Any, Iterable, Tuple, TypeAlias, List
 import typing
 
-# For type checking with mypy
-Pixel         = tuple[int, int]
-Color         = tuple[int, int, int]
-
-# Closest I can get on the numpy stuff :(
+# Closest I can get for mypy types on the numpy stuff :(
 # email andrew.brownbill@gmail.com if you know how to do this?
 Vector:         TypeAlias = 'np.ndarray[Any, Any ]'
 Matrix:         TypeAlias = 'np.ndarray[Any, Any ]'
-CoordToPixel  = Callable[ [Vector], tuple[int,int] ]
+Image:          TypeAlias = 'np.ndarray[Any, Any ]'
+
+# For type checking with mypy
+Pixel=          tuple[int, int]
+Color=          tuple[int, int, int]
+CoordToPixel=   Callable[ [Vector], Pixel]
 
 class MapFeature:
   def __init__( self, 
@@ -28,7 +30,7 @@ class MapFeature:
       destination:    Optional[str], 
       usage:          Optional[int], 
       pixel:          Optional[Pixel] 
-      ):
+    ):
     """
     Features on the electrical grid maps
 
@@ -121,25 +123,13 @@ MAP_FEATURES = [
   MapFeature("Mat6", "Mat",     44.073878, -80.840530,   "map1", None,      None, None),
 
   # Approximate location of the chalk road that goes through the south field
-  # RR = Road Right, RL = Road Left.
-#  MapFeature("RR0",   "Road",    44.075130, -80.838528,  "map1", None,      None, None),
-#  MapFeature("RR1",   "Road",    44.074479, -80.838801,  "map1", "RR0",     None, None),
-#  MapFeature("RR2",   "Road",    44.073924, -80.839380,  "map1", "RR1",     None, None),
-#  MapFeature("RR3",   "Road",    44.073988, -80.839955,  "map1", "RR2",     None, None),
-#  MapFeature("RR4",   "Road",    44.073822, -80.840468,  "map1", "RR3",     None, None),
-
-#  MapFeature("RL0",   "Road",    44.075114, -80.838477,  "map1", None,      None, None),
-#  MapFeature("RL1",   "Road",    44.074518, -80.838703,  "map1", "RL0",     None, None),
-#  MapFeature("RL2",   "Road",    44.073849, -80.839371,  "map1", "RL1",     None, None),
-#  MapFeature("RL3",   "Road",    44.073951, -80.839914,  "map1", "RL2",     None, None),
-#  MapFeature("RL4",   "Road",    44.073759, -80.840486,  "map1", "RL3",     None, None),
+  # RC = Road center.
 
   MapFeature("RC0",   "Road",    44.075122, -80.838502,  "map1", None,      None, None),
   MapFeature("RC1",   "Road",    44.074498, -80.838752,  "map1", "RC0",     None, None),
   MapFeature("RC2",   "Road",    44.073886, -80.839380,  "map1", "RC1",     None, None),
   MapFeature("RC3",   "Road",    44.073969, -80.839934,  "map1", "RC2",     None, None),
   MapFeature("RC4",   "Road",    44.073790, -80.840477,  "map1", "RC3",     None, None),
-
 ]
 
 def compute_coord_to_pixel_function(
@@ -179,7 +169,7 @@ def compute_coord_to_pixel_function(
   """
   M_Degree     = np.transpose(np.array( [deg_vec_0, deg_vec_1] ))
   M_Pixel      = np.transpose(np.array( [pixel_vec_0, pixel_vec_1] ))
-  M_Degree_Inv = np.linalg.inv( M_Degree )
+  M_Degree_Inv = np.linalg.inv( M_Degree ) #type: ignore[no-untyped-call]
   M = np.matmul( M_Pixel, M_Degree_Inv )
 
   """
@@ -188,7 +178,8 @@ def compute_coord_to_pixel_function(
   def coord_to_pixel_helper( 
       coord : Vector,
       M     : Matrix,
-      basis : MapFeature ) -> Pixel:
+      basis : MapFeature 
+    ) -> Pixel:
     pixel = M.dot(coord - basis.coord) + basis.pixel
     return ( int( pixel[0] ), int( pixel[1] ) )
 
@@ -207,11 +198,10 @@ def find_map_entry(
   
   Note: The linear search is inefficint but the data set is small
   """
-  for feature in features:
-    if name == feature.name:
-      return feature
-  print("Cannot find " + name )
-  assert( False )
+  try:
+    return next(filter(lambda feature: feature.name == name, features))
+  except StopIteration:
+    assert False, "Map Feature " + name + " not found"
 
 def get_destination_pixel( 
     map_features:       MapFeatures, 
@@ -227,7 +217,12 @@ def get_destination_pixel(
   return None
 
 
-def draw_features( map_features : MapFeatures, coord_to_pixel : CoordToPixel, feature_filter : FeatureFilter, feature_drawer: FeatureDrawer ):
+def draw_features( 
+    map_features:     MapFeatures, 
+    coord_to_pixel:   CoordToPixel,
+    feature_filter:   FeatureFilter, 
+    feature_drawer:   FeatureDrawer 
+  ) -> None:
   """
   Draw some map features
   
@@ -241,18 +236,14 @@ def draw_features( map_features : MapFeatures, coord_to_pixel : CoordToPixel, fe
       destination_pixel = get_destination_pixel( map_features, feature.destination, coord_to_pixel )
       feature_drawer( feature, pixel, destination_pixel )
 
-def filter_for_type( 
-    filter_type : str 
-  ) -> FeatureFilter:
+def filter_for_type(filter_type : str) -> FeatureFilter:
   """
   Create a function that returns true if a feature is a particular type
   """
   return lambda feature: feature.type == filter_type
 
 
-def filter_for_line( 
-    filter_type : str 
-  ) -> FeatureFilter:
+def filter_for_line(filter_type : str) -> FeatureFilter:
   """
   Create a function that returns true if a feature is a type and has a destination
   """
@@ -260,7 +251,7 @@ def filter_for_line(
 
 
 def create_line_drawer( 
-    image, 
+    image:        Image, 
     color:        Color, 
     line_width:   int 
   ) -> FeatureDrawer:
@@ -272,8 +263,8 @@ def create_line_drawer(
 
 
 def create_label_drawer( 
-    image, 
-    color: Color 
+    image:    Image, 
+    color:    Color 
   ) -> FeatureDrawer:
   """
   Create a function that uses the feature name to draw a label
@@ -285,7 +276,7 @@ def create_label_drawer(
 
 
 def draw_crosshair( 
-    image, 
+    image:    Image, 
     point:    Pixel, 
     color:    Color
   ) -> None:
@@ -305,8 +296,8 @@ def draw_crosshair(
 
 
 def create_crosshair_drawer( 
-    image, 
-    color: Color 
+    image:            Image, 
+    color:            Color 
   ) -> FeatureDrawer:
   """
   Create a function that draws a crosshair
@@ -315,7 +306,7 @@ def create_crosshair_drawer(
 
 
 def draw_spools( 
-    image, 
+    image:            Image, 
     features:         MapFeatures, 
     coord_to_pixel:   CoordToPixel 
   ) -> None:
@@ -329,7 +320,7 @@ def draw_spools(
 
 
 def draw_mats( 
-    image, 
+    image:            Image, 
     features:         MapFeatures, 
     coord_to_pixel:   CoordToPixel 
   ) -> None:
@@ -342,7 +333,7 @@ def draw_mats(
   draw_features( features, coord_to_pixel, filter_for_type("Mat"), create_label_drawer( image, off_white ))
 
 def draw_lines( 
-    image, 
+    image:            Image, 
     features:         MapFeatures, 
     coord_to_pixel:   CoordToPixel, 
     feature_types:    Iterable[str], 
@@ -368,7 +359,7 @@ def draw_lines(
   image = cv2.addWeighted( overlay, alpha, image, beta, 0, image )
 
 def draw_roads( 
-    image, 
+    image:          Image, 
     features:       MapFeatures, 
     coord_to_pixel: CoordToPixel 
   ) -> None:
@@ -381,7 +372,7 @@ def draw_roads(
   draw_lines( image, features, coord_to_pixel, ["Road"], cyan, alpha, road_width )
 
 def draw_tent( 
-    image, 
+    image:          Image, 
     features:       MapFeatures, 
     coord_to_pixel: CoordToPixel 
   ) -> None:
@@ -394,7 +385,7 @@ def draw_tent(
 
 
 def draw_electric_cords( 
-    image, 
+    image:          Image, 
     features:       MapFeatures, 
     coord_to_pixel: CoordToPixel 
   ) -> None:
@@ -411,7 +402,7 @@ def draw_electric_cords(
 
 
 def draw_all_features( 
-    image, 
+    image:          Image, 
     map_features:   MapFeatures, 
     coord_to_pixel: CoordToPixel 
   ) -> None:
